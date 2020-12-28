@@ -1,89 +1,52 @@
-// Using p2 for server side physics
+var express = require('express');
+var app = express();
+var server = require('http').Server(app);
+var io = require('socket.io')(server);
+var players = {};
 
-const {
-    Worker,
-    isMainThread,
-    parentPort,
-    workerData,
-    threadId,
-    MessageChannel,
-} = require("worker_threads");
+app.use(express.static(__dirname + '/public'));
 
-const envConfig = require("dotenv").config();
-const express = require("express");
-const Ably = require("ably");
-const p2 = require("p2");
-const app = express();
-const ABLY_API_KEY = process.env.ABLY_API_KEY;
-const globalGameName = "main-game-thread";
-const GAME_ROOM_CAPACITY = 10;
-let globalChannel;
-let activeGameRooms = {};
-
-// start Ably
-const realtime = Ably.Realtime({
-    key: ABLY_API_KEY,
-    echoMessages: false,
+app.get('/', function (req, res) {
+    res.sendFile(__dirname + '/index.html');
 });
 
-// Wait until connection with Ably is established
-realtime.connection.once("connected", () => {
-    gameRoom = realtime.channels.get(gameRoomName)
-});
+io.on('connection', function(socket) {
+    console.log('a user connected!');
 
-// Create a uniqueid for each client that authorizes
-const uniqueId = function() {
-    return "id-" + Math.random().toString(36).substr(2, 16);
-};
+    // create a new player and add it to our players object
+    players[socket.id] = {
+        rotation: 0,
+        x: Math.floor(Math.random() * 700) + 50,
+        y: Math.floor(Math.random() * 500) + 50,
+        playerId: socket.id,
+        team: (Math.floor(Math.random() * 2) == 0)? 'red' : 'blue'
+    };
 
-app.use(express.static("public"));
+    // Send the players object to the new player
+    socket.emit('currentPlayers', players);
+    // update all other players of the new player
+    socket.broadcast.emit('newPlayer', players[socket.id]);
 
-app.get("/auth", (request, response) => {
-    const tokenParams = {clientId: uniqueId() };
+    socket.on('disconnect', function () {
+        console.log('user disconnected.');
+        
+        // remove player from players
+        delete players[socket.id];
+        // tell other players to remove this player
+        io.emit('disconnect_player', socket.id);
+    });
 
-    // Authenticate the player with Ably using the unique id (token)
-    realtime.auth.createTokenRequest(tokenParams, function (err, tokenRequest) {
-        if (err) {
-            response.status(500).send("Error requesting token: " + JSON.stringify(err));
-        }
-        else {
-            response.setHeader("Content-Type", "application/json");
-            response.send(JSON.stringify(tokenRequest));
-        }
+    // when a player moves, update player data
+    socket.on('playerMovement', function (movementData) {
+        players[socket.id].x = movementData.x;
+        players[socket.id].y = movementData.y;
+        players[socket.id].rotation = movementData.rotation;
+
+        // broadcast new data to all players
+        socket.broadcast.emit('playerMoved', players[socket.id]);
     });
 });
 
-
-
-function resetServerState() {
-    peopleAccessingTheWebsite = 0;
-    gameOn = false;
-    gameTickerOn = false;
-    totalPlayers = 0;
-    alivePlayers = 0;
-    for (let item in playerChannels) {
-        playerChanneos[item].unsubscribe();
-    }
-}
-
-function startMovingPhysicsWorld() {
-    let p2WorldInterval = setInterval(function () {
-        if (!gameOn) {
-            clearInterval(p2WorldInterval);
-        }
-        else {
-            // Update velocity every 5 seconds
-            if (++shipVelocityTimer >= 80) {
-                shipVelocityTimer = 0;
-                shipBody.velocity[0] = calcRandomVelocity();
-            }
-            p2WorldInterval.step(P2_WORLD_TIME_STEP);
-            if (shipBody.position[0] > 1400 && shipBody.velocity[0] > 0) {
-                shipBody.position[0] = 0;
-            }
-            else if (shipBody.position[0] < 0 && shipBody.velocity[0] < 0) {
-                shipBody.position[0] = 1400;
-            }
-        }
-    }, 1000 * P2_WORLD_TIME_STEP)
-}
+server.listen(8081, function () {
+    console.log(`listening on ${server.address().port}`);
+});
