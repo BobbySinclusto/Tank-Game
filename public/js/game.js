@@ -69,7 +69,7 @@ function create() {
             base: this.add.circle(0, 0, radius, 0x888888),
             thumb: this.add.circle(0, 0, radius / 2, 0xcccccc),
             // dir: '8dir',   // 'up&down'|0|'left&right'|1|'4dir'|2|'8dir'|3
-            forceMin: 70,
+            // forceMin: 70,
             // enable: true
         });
         this.cursors = this.joyStick.createCursorKeys();
@@ -157,30 +157,29 @@ function update() {
         // save old position data
         this.ship.oldPosition = {x: this.ship.x, y: this.ship.y, rotation: this.ship.rotation};
 
-        if (this.cursors.left.isDown) {
-            this.ship.setAngularVelocity(-150);
-        }
-        else if (this.cursors.right.isDown) {
-            this.ship.setAngularVelocity(150);
-        }
-        else {
-            this.ship.setAngularVelocity(0);
-        }
-
-        if (this.cursors.up.isDown) {
-            this.ship.setVelocityX(Math.sin(this.ship.rotation) * MAX_TANK_SPEED);
-            this.ship.setVelocityY(-Math.cos(this.ship.rotation) * MAX_TANK_SPEED);
-        }
-        else if (this.cursors.down.isDown) {
-            this.ship.setVelocityX(-Math.sin(this.ship.rotation) * MAX_TANK_SPEED);
-            this.ship.setVelocityY(Math.cos(this.ship.rotation) * MAX_TANK_SPEED);
-        }
-        else {
-            this.ship.setVelocityX(0);
-            this.ship.setVelocityY(0);
-        }
-
         if (!is_mobile) {
+            if (this.cursors.left.isDown) {
+                this.ship.setAngularVelocity(-150);
+            }
+            else if (this.cursors.right.isDown) {
+                this.ship.setAngularVelocity(150);
+            }
+            else {
+                this.ship.setAngularVelocity(0);
+            }
+
+            if (this.cursors.up.isDown) {
+                this.ship.setVelocityX(Math.sin(this.ship.rotation) * MAX_TANK_SPEED);
+                this.ship.setVelocityY(-Math.cos(this.ship.rotation) * MAX_TANK_SPEED);
+            }
+            else if (this.cursors.down.isDown) {
+                this.ship.setVelocityX(-Math.sin(this.ship.rotation) * MAX_TANK_SPEED);
+                this.ship.setVelocityY(Math.cos(this.ship.rotation) * MAX_TANK_SPEED);
+            }
+            else {
+                this.ship.setVelocityX(0);
+                this.ship.setVelocityY(0);
+            }
             if (this.cursors.space.isDown) {
                 if (this.isShooting == false) {
                     this.isShooting = true;
@@ -198,6 +197,16 @@ function update() {
                 should_shoot = false;
                 shootBullet(this, this.ship.x, this.ship.y, this.ship.rotation, true);
                 this.socket.emit('shotBullet', {x: this.ship.x, y: this.ship.y, rot: this.ship.rotation});
+            }
+            if (this.joyStick && this.joyStick.force != 0) {
+                let multiplier = this.joyStick.force >= 100 ? 1 : this.joyStick.force / 100;
+                this.ship.setRotation((this.joyStick.angle + 90) * Math.PI / 180);
+                this.ship.setVelocityX(Math.sin(this.ship.rotation) * MAX_TANK_SPEED * multiplier);
+                this.ship.setVelocityY(-Math.cos(this.ship.rotation) * MAX_TANK_SPEED * multiplier);
+            }
+            else {
+                this.ship.setVelocityX(0);
+                this.ship.setVelocityY(0);
             }
         }
 
