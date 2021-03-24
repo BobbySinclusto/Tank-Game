@@ -2,6 +2,7 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const MAX_TANK_SPEED = 100;
 const MAX_BULLET_SPEED = 110;
+const BULLET_ALIVE_TIME = 5000;
 let is_mobile = false;
 let should_shoot = false;
 
@@ -34,7 +35,8 @@ function checkMob() {
 
 function preload() {
     this.load.image('ship', 'assets/playerShip1_blue.png');
-    this.load.image('otherPlayer', 'assets/enemyBlack5.png')
+    this.load.image('otherPlayer', 'assets/enemyBlack5.png');
+    this.load.plugin('rexfadeplugin', 'https://raw.githubusercontent.com/rexrainbow/phaser3-rex-notes/master/dist/rexfadeplugin.min.js', true);
     if (checkMob()) {
         is_mobile = true;
         // Add joystick module
@@ -73,6 +75,7 @@ function create() {
         this.cursors = this.joyStick.createCursorKeys();
 
         // Add fire button
+        this.input.addPointer(3);
         let button = this.add.circle(WIDTH - margin - radius, HEIGHT - margin - radius, radius, 0x880000);
         this.fireButton = this.plugins.get('rexbuttonplugin').add(button);
         this.fireButton.on('click', function () {
@@ -216,6 +219,9 @@ function shootBullet(self, x, y, angle, mine) {
     bullet.body.bounce.y = 1;
     bullet.body.velocity.x = Math.sin(angle) * MAX_BULLET_SPEED;
     bullet.body.velocity.y = -Math.cos(angle) * MAX_BULLET_SPEED;
+    setTimeout(function() {
+        self.plugins.get('rexfadeplugin').fadeOutDestroy(bullet, 1000);
+    }, BULLET_ALIVE_TIME);
 }
 
 function addPlayer(self, playerInfo) {
