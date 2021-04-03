@@ -20,54 +20,7 @@ app.get('/', function (req, res) {
 // The number of horizontal walls in a column is always one less than the number of grid squares in a column.
 // Each grid square has the following walls: vw[i][j-1] vw[i][j] hw[i-1][j] hw[i][j]
 // The output of this function is an array with two elements: the vertical wall array, and the horizontal wall array.
-/*
-function generate_map(width, height) {
-    // Set up the arrays
-    let vw = new Array(height);
-    for (let i = 0; i < height; ++i) {
-        vw[i] = new Array(width - 1).fill(1);
-    }
-    let hw = new Array(height - 1);
-    for (let i = 0; i < height - 1; ++i) {
-        hw[i] = new Array(width).fill(1);
-    }
 
-    // Generate the board
-    for (let i = 0; i < height; ++i) {
-        for (let j = 0; j < width; ++j) {
-            // Choose either horizontal or vertical wall to delete
-            if (Math.floor(Math.random() * 2) == 0) {
-                // Delete a vertical wall. Make sure that we choose one that isn't out of bounds.
-                let d = Math.floor(Math.random() * 2);
-                if (j == width - 1 || (d == 0 && j != 0)) {
-                    // Delete wall to the left
-                    vw[i][j - 1] = 0;
-                }
-                else {
-                    // Delete wall to the right
-                    vw[i][j] = 0;
-                }
-            }
-            else {
-                // Delete a horizontal wall. Make sure that we choose one that isn't out of bounds.
-                let d = Math.floor(Math.random() * 2);
-                if (i == height - 1 || (d == 0 && i != 0)) {
-                    // Delete wall to the left
-                    hw[i - 1][j] = 0;
-                }
-                else {
-                    // Delete wall to the right
-                    hw[i][j] = 0;
-                }
-            }
-        }
-    }
-
-    return [vw, hw];
-}
-*/
-
-// TAKE 2
 function validate_map(map) {
     let vw = map[0];
     let hw = map[1];
@@ -185,7 +138,6 @@ function generate_map(width, height) {
         }
     }
 }
-// END OF TAKE 2
 
 io.on('connection', function(socket) {
     console.log('a user connected!');
@@ -196,7 +148,8 @@ io.on('connection', function(socket) {
         x: Math.floor(Math.random() * 700) + 50,
         y: Math.floor(Math.random() * 500) + 50,
         playerId: socket.id,
-        team: (Math.floor(Math.random() * 2) == 0)? 'red' : 'blue'
+        team: (Math.floor(Math.random() * 2) == 0)? 'red' : 'blue',
+        alive: true
     };
 
     // Send the players object to the new player
@@ -229,6 +182,13 @@ io.on('connection', function(socket) {
     // When a player shoots a bullet, shoot the bullet.
     socket.on('shotBullet', function (bulletData) {
         socket.broadcast.emit('shotBullet', bulletData);
+    });
+
+    // When a player splodes, splode them
+    socket.on('sploded', function (splodeData) {
+        console.log(splodeData);
+        //players[splodeData.playerId].alive = false;
+        socket.broadcast.emit('sploded', splodeData);
     });
 });
 

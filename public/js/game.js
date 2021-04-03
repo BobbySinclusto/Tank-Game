@@ -2,9 +2,12 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const MAX_TANK_SPEED = 100;
 const MAX_BULLET_SPEED = 110;
-const BULLET_ALIVE_TIME = 5000;
+const BULLET_ALIVE_TIME = 10000;
+const COOLDOWN_TIME = 2000;
+
 let is_mobile = false;
 let should_shoot = false;
+let can_shoot = true;
 
 var config = {
     type: Phaser.AUTO,
@@ -33,9 +36,15 @@ function checkMob() {
     return check;
 }
 
+function uuidv4() {
+    return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+}
+
 function preload() {
     this.load.image('ship', 'assets/playerShip1_blue.png');
     this.load.image('otherPlayer', 'assets/enemyBlack5.png');
+    this.load.image('spark0', 'assets/blue.png');
+    this.load.image('spark1', 'assets/red.png');
     this.load.plugin('rexfadeplugin', 'https://raw.githubusercontent.com/rexrainbow/phaser3-rex-notes/master/dist/rexfadeplugin.min.js', true);
     if (checkMob()) {
         is_mobile = true;
@@ -56,6 +65,7 @@ function create() {
     this.walls = this.physics.add.group();
     this.myBullets = this.physics.add.group();
     this.otherBullets = this.physics.add.group();
+    this.allBullets = {};
 
     // Check if on mobile
     if (is_mobile) {
@@ -85,6 +95,29 @@ function create() {
     else {
         this.cursors = this.input.keyboard.createCursorKeys();
     }
+
+    // Set up Sploders
+    var sploder0 = this.add.particles('spark0').createEmitter({
+        x: 400,
+        y: 300,
+        speed: { min: -800, max: 800 },
+        angle: { min: 0, max: 360 },
+        scale: { start: 0.5, end: 0 },
+        blendMode: 'SCREEN',
+        active: false,
+        lifespan: 600
+    });
+
+    var sploder1 = this.add.particles('spark1').createEmitter({
+        x: 400,
+        y: 300,
+        speed: { min: -800, max: 800 },
+        angle: { min: 0, max: 360 },
+        scale: { start: 0.3, end: 0 },
+        blendMode: 'SCREEN',
+        active: false,
+        lifespan: 300
+    });
 
     this.socket.on('currentPlayers', function (players) {
         Object.keys(players).forEach(function (id) {
@@ -122,22 +155,48 @@ function create() {
         self.initialY = Math.floor(Math.random() * self.map_height / self.grid_size) * self.grid_size + self.grid_size * 0.5 + HEIGHT / 2 - self.map_height / 2;
     });
     this.socket.on('shotBullet', function(bulletData) {
-        shootBullet(self, bulletData.x, bulletData.y, bulletData.rot, false);
+        shootBullet(self, bulletData.id, bulletData.x, bulletData.y, bulletData.rot, false);
+    });
+    this.socket.on('sploded', function(data) {
+        self.otherPlayers.getChildren().forEach(function (otherPlayer) {
+            if (data != null && data.playerId === otherPlayer.playerId) {
+                splode(self, sploder0, sploder1, otherPlayer, data.bulletId);
+            }
+        });
     });
 
     // Players and myBullets collide with walls
     this.physics.add.collider(this.walls, this.playerGroup);
     this.physics.add.collider(this.walls, this.myBullets);
     this.physics.add.collider(this.walls, this.otherBullets);
-    // myBullets collide with other players
-    this.physics.add.collider(this.myBullets, this.otherPlayers, function (_bullet, _player) {
-        console.log("testing");
-        alert("ya done hit the dude");
+    // myBullets collide with self
+    this.physics.add.collider(this.myBullets, this.playerGroup, function (_bullet, _player) {
+        // TODO: scores and stuff
+        // Figure out what the bullet id is
+        Object.keys(self.allBullets).forEach(function (id) {
+            if (self.allBullets[id] === _bullet) {
+                splode(self, sploder0, sploder1, _player, id);
+                // Send splode event to other players
+                sendSplode(self, _player, id);
+            }
+        }); 
+    });
+    // otherBullets collide with player
+    this.physics.add.collider(this.otherBullets, this.playerGroup, function (_bullet, _player) {
+        // TODO: scores and stuff
+        // Figure out what the bullet id is
+        Object.keys(self.allBullets).forEach(function (id) {
+            if (self.allBullets[id] === _bullet) {
+                splode(self, sploder0, sploder1, _player, id);
+                // Send splode event to other players
+                sendSplode(self, _player, id);
+            }
+        });
     });
 }
 
 function update() {
-    if (this.ship) {
+    if (this.ship && this.ship.active) {
         if (this.initialX != -1) {
             this.ship.oldPosition = {x: this.ship.x, y: this.ship.y, rotation: this.ship.rotation};
             this.ship.x = this.initialX;
@@ -184,8 +243,9 @@ function update() {
                 if (this.isShooting == false) {
                     this.isShooting = true;
                     // Shoot a bullet
-                    shootBullet(this, this.ship.x, this.ship.y, this.ship.rotation, true);
-                    this.socket.emit('shotBullet', {x: this.ship.x, y: this.ship.y, rot: this.ship.rotation});
+                    let id = uuidv4();
+                    shootBullet(this, id, this.ship.x, this.ship.y, this.ship.rotation, true);
+                    this.socket.emit('shotBullet', {id: id, x: this.ship.x, y: this.ship.y, rot: this.ship.rotation});
                 }
             }
             else {
@@ -195,8 +255,9 @@ function update() {
         else {
             if (should_shoot) {
                 should_shoot = false;
-                shootBullet(this, this.ship.x, this.ship.y, this.ship.rotation, true);
-                this.socket.emit('shotBullet', {x: this.ship.x, y: this.ship.y, rot: this.ship.rotation});
+                let id = uuidv4();
+                shootBullet(this, id, this.ship.x, this.ship.y, this.ship.rotation, true);
+                this.socket.emit('shotBullet', {id: id, x: this.ship.x, y: this.ship.y, rot: this.ship.rotation});
             }
             if (this.joyStick && this.joyStick.force != 0) {
                 let multiplier = this.joyStick.force >= 100 ? 1 : this.joyStick.force / 100;
@@ -214,14 +275,22 @@ function update() {
     }
 }
 
-function shootBullet(self, x, y, angle, mine) {
+function shootBullet(self, id, x, y, angle, mine) {
+    if (!can_shoot) {
+        return;
+    }
+    can_shoot = false;
     let bullet = self.add.circle(x, y, WIDTH / 400, 0xff00ff);
     bullet = self.physics.add.existing(bullet);
-    // TODO: Set timeout
+    self.allBullets[id] = bullet;
     if (mine) {
+        bullet.fillcolor = 0x0000ff;
+        bullet.strokecolor = 0xff0000;
         self.myBullets.add(bullet);
     }
     else {
+        bullet.fillcolor = 0xff0000;
+        bullet.strokecolor = 0x0000ff;
         self.otherBullets.add(bullet);
     }
     bullet.body.bounce.x = 1;
@@ -229,7 +298,12 @@ function shootBullet(self, x, y, angle, mine) {
     bullet.body.velocity.x = Math.sin(angle) * MAX_BULLET_SPEED;
     bullet.body.velocity.y = -Math.cos(angle) * MAX_BULLET_SPEED;
     setTimeout(function() {
-        self.plugins.get('rexfadeplugin').fadeOutDestroy(bullet, 1000);
+        can_shoot = true;
+    }, COOLDOWN_TIME);
+    setTimeout(function() {
+        if (bullet.active) {
+            self.plugins.get('rexfadeplugin').fadeOutDestroy(bullet, 1000);
+        }
     }, BULLET_ALIVE_TIME);
 }
 
@@ -332,4 +406,26 @@ function draw_map(self, current_map) {
             }
         }
     }
+}
+
+function splode(self, sploder0, sploder1, player, bulletid) {
+    // Send splode event to server
+    self.socket.emit('sploded')
+    sploder0.setPosition(player.x, player.y);
+    sploder1.setPosition(player.x, player.y);
+    sploder0.active = true;
+    sploder1.active = true;
+    for (i = 0; i < 10; ++i) {
+        sploder0.explode();
+        sploder1.explode();
+    }
+
+    self.plugins.get('rexfadeplugin').fadeOutDestroy(self.allBullets[bulletid], 200);
+    delete(self.allBullets[bulletid]);
+    self.plugins.get('rexfadeplugin').fadeOutDestroy(player, 200);
+}
+
+function sendSplode(self, player, bulletid) {
+    // This is always used to send the current player exploding, so we can just use self.socket.id
+    self.socket.emit('sploded', {playerId: self.socket.id, bulletId: bulletid});
 }
